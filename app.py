@@ -5,6 +5,12 @@ import gradio as gr
 import google.generativeai as genai
 from google.generativeai.types import content_types
 
+import nltk
+from nltk.tokenize import sent_tokenize
+
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
+
 # === Load Gemini API Key ===
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", None)
 if not GEMINI_API_KEY:
@@ -57,7 +63,17 @@ def analyze_text_split_output(text):
     return parse_analysis_output(response)
 
 def summarize_text(text: str) -> str:
-    prompt = f"Summarise this text in 2-3 sentences:\n\n{text}"
+    # Tokenise the input text into sentences
+    sentences = sent_tokenize(text)
+    total_sentences = len(sentences)
+
+    # Compute 10% of the total, clamp between 2 and 5 sentences
+    num_summary_sentences = max(2, int(total_sentences * 0.10))
+    num_summary_sentences = min(num_summary_sentences, 5)
+
+    prompt = (
+        f"Summarise the following text in approximately {num_summary_sentences} sentences:\n\n{text}"
+    )
     return gemini_generate(prompt)
 
 def process_document(file):
@@ -108,8 +124,11 @@ def process_document(file):
 # ===== UI Title and Description =====
 APP_TITLE = "🧘‍♂️ ManoVākya (मनॊवाक्य): Sentiments & Summaries"
 APP_DESCRIPTION = (
-    "Understand your thoughts, messages, or documents through the lens of AI. "
-    "ManoVākya helps analyse tone, extract meaning, and distil essence — enabling clarity in daily communication, journaling, and decision-making."
+    "ManoVākya (मनॊवाक्य) is your intelligent companion for understanding and interpreting language with clarity and insight. "
+    "Whether you're expressing personal reflections, composing professional communication, or working with extensive documents, ManoVākya empowers you to uncover the tone, structure, sentiment, and essence of your words. "
+    "With advanced AI capabilities, it can analyse emotional undertones, summarise lengthy texts into digestible insights, and help you discover key themes and readability in your writing. "
+    "Designed for students, professionals, researchers, and reflective individuals alike, ManoVākya brings precision to journaling, content creation, documentation, and mindful communication. "
+    "By combining linguistic intelligence with ethical design, ManoVākya bridges emotion and analysis—helping you not just write better, but think deeper."
 )
 
 # ===== Gradio Interfaces =====
@@ -118,9 +137,9 @@ analyze_interface = gr.Interface(
     inputs=gr.Textbox(lines=5, max_lines=20, label="🗣 Enter text for sentiment & topic analysis"),
     outputs=[
         gr.Textbox(label="📊 Sentiment", lines = 1),
-        gr.Textbox(label="🧩 Topics", lines = 2, max_lines=20),
+        gr.Textbox(label="🧩 Topics", lines = 2, max_lines=20, show_copy_button=True),
         gr.Textbox(label="🔢 Word Count", lines = 1),
-        gr.Textbox(label="📘 Readability Score", lines = 4, max_lines=20)
+        gr.Markdown(label="📘 Readability Score", show_copy_button=True)
     ],
     title="Gemini Sentiment & Topic Analyzer",
     flagging_mode="never",
@@ -130,32 +149,31 @@ analyze_interface = gr.Interface(
 summarize_interface = gr.Interface(
     fn=summarize_text,
     inputs=gr.Textbox(lines=5, max_lines=20, label="✍️ Enter text to summarise"),
-    outputs=gr.Textbox(label="📝 Summary Result", lines = 4, max_lines=20),
+    outputs=gr.Textbox(label="📝 Summary Result", lines = 4, max_lines=20, show_copy_button=True),
     title="Gemini Text Summariser",
     flagging_mode="never",
     live=False
 )
 
-#doc_interface = gr.Interface(
-#    fn=process_document,
-#    inputs=gr.File(label="📁 Upload PDF or TXT File"),
-#    outputs=gr.Markdown(label="📝 Summary"),
-#    title="Gemini Document Summariser",
-#    flagging_mode="never",
-#    live=True
-#)
-
 with gr.Blocks(title="Gemini Document Summariser") as doc_interface:
     gr.Markdown("## 📁 Gemini Document Summariser")
 
     file_input = gr.File(label="Upload PDF or TXT File")
-    submit_button = gr.Button("Submit")
-    output_box = gr.Markdown(label="📝 Summary")
+    with gr.Row():
+        submit_button = gr.Button("Submit")
+        clear_button = gr.Button("Clear")
+    output_box = gr.Markdown(label="📝 Summary", show_copy_button=True)
 
     submit_button.click(
         fn=process_document,
         inputs=file_input,
         outputs=output_box
+    )
+
+    clear_button.click(
+        fn=lambda: (None, ""),  # Reset file and text
+        inputs=[],
+        outputs=[file_input, output_box]
     )
     
 # Try to load the PayPal URL from the environment; if missing, use a placeholder
@@ -187,7 +205,9 @@ with gr.Blocks(title=APP_TITLE) as the_application:
             </button>
         </a>
         """)
-        
+
+    gr.Image(value="App Image.jpg", show_label=False, container=False)
+
 # Determine if running on Hugging Face Spaces
 on_spaces = os.environ.get("SPACE_ID") is not None
 

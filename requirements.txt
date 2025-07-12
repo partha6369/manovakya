@@ -1,2 +1,5 @@
 gradio>=4.26.0
 google-generativeai>=0.3.2
+nltk
+pandas
+numpy
