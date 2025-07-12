@@ -45,6 +45,6 @@ pinned: true
 Clone the repo and install requirements:
 
 ```bash
-git clone https://huggingface.co/spaces/YOUR_USERNAME/manovakya
+git clone https://huggingface.co/spaces/partha6369/manovakya
 cd manovakya
 pip install -r requirements.txt
