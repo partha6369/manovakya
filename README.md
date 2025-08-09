@@ -4,7 +4,7 @@ emoji: 🧠
 colorFrom: indigo
 colorTo: blue
 sdk: gradio
-sdk_version: 5.36.2
+sdk_version: 5.41.1
 app_file: app.py
 pinned: true
 ---
@@ -34,6 +34,9 @@ pinned: true
 
 - 📁 **PDF & TXT Document Summarisation**  
   Upload documents and receive a clean, readable summary — ideal for reports, books, and long notes.
+
+- 🔬 **Research Companion (Abstract & Keywords Generator)**
+  Extract a concise abstract and relevant keywords from your research papers, articles, or essays. Ideal for students, scholars, and content creators preparing for submissions, indexing, or archiving.
 
 - ❤️ **Support Research**  
   An optional [PayPal donation button](https://www.paypal.com/donate) allows users to support the research behind the project.

@@ -1,9 +1,11 @@
 import os
 import re
 import html
+import fitz  # PyMuPDF
 import gradio as gr
 import google.generativeai as genai
 from google.generativeai.types import content_types
+from docx import Document
 
 import nltk
 from nltk.tokenize import sent_tokenize
@@ -28,6 +30,28 @@ def gemini_generate(prompt: str) -> str:
     except Exception as e:
         return f"⚠️ Gemini API Error: {e}"
 
+def generate_keywords(text: str, num_keywords: int) -> str:
+    prompt = (
+        "Analyse the following text. "
+        f"Return {num_keywords} keywords or key phrases for the text, separated by a comma.\n\n"
+        f"{text}"
+    )
+    return gemini_generate(prompt)
+
+def generate_abstract(text: str, num_words: int) -> str:
+    prompt = (
+        "Analyse the following text. "
+        f"Return an abstract for the text in approximately {num_words} words.\n\n"
+        f"{text}"
+    )
+    return gemini_generate(prompt)
+
+def generate_abstract_and_keywords(text: str, num_words: int, num_keywords: int) -> tuple[str, str]:
+    abstract = generate_abstract(text, num_words)
+    keywords = generate_keywords(text, num_keywords)
+
+    return abstract, keywords
+    
 def analyze_text(text: str) -> str:
     prompt = (
         "Analyse the following text. "
@@ -95,6 +119,7 @@ def process_document(file):
             except Exception as e:
                 yield f"⚠️ **Could not summarise PDF:** {e}"
                 return
+
         elif ext == ".txt":
             try:
                 # Try UTF-8 first
@@ -102,25 +127,92 @@ def process_document(file):
                     input_text = f.read()
             except UnicodeDecodeError:
                 try:
-                    # Try fallback encoding
+                    # Fallback encoding
                     with open(file.name, "r", encoding="ISO-8859-1") as f:
                         input_text = f.read()
                 except Exception as e:
                     yield f"⚠️ **Could not read TXT:** {e}"
                     return
-        
+
             text = summarize_text(input_text)
             text = html.escape(text)
+
+        elif ext == ".docx":
+            try:
+                doc = Document(file.name)
+                input_text = "\n".join([para.text for para in doc.paragraphs])
+                text = summarize_text(input_text)
+                text = html.escape(text)
+            except Exception as e:
+                yield f"⚠️ **Could not process DOCX:** {e}"
+                return
+
         else:
-            yield "⚠️ **Only PDF and TXT files are supported.**"
+            yield "⚠️ **Only PDF, DOCX, and TXT files are supported.**"
             return
+
     except Exception as e:
-        yield f"⚠️ **Could not summarise:** {e}"
+        yield f"⚠️ **Unexpected error during processing:** {e}"
         return
 
     # Wrap the output in a scrollable div
     yield text
+    
+def process_file_for_abstract_and_keywords(file, num_words, num_keywords):
+    yield "⏳ *Processing document...*", ""
 
+    if file is None:
+        yield "❗ **No file uploaded.**", ""
+        return
+
+    ext = os.path.splitext(file.name)[-1].lower()
+    try:
+        if ext == ".pdf":
+            try:
+                with fitz.open(file.name) as doc:
+                    input_text = ""
+                    for page in doc:
+                        input_text += page.get_text()
+        
+                abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords)
+            except Exception as e:
+                yield f"⚠️ **Could not generate abstract and extract keywords from PDF:** {e}", ""
+                return
+
+        elif ext == ".txt":
+            try:
+                with open(file.name, "r", encoding="utf-8") as f:
+                    input_text = f.read()
+            except UnicodeDecodeError:
+                try:
+                    with open(file.name, "r", encoding="ISO-8859-1") as f:
+                        input_text = f.read()
+                except Exception as e:
+                    yield f"⚠️ **Could not read TXT:** {e}", ""
+                    return
+
+            abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords)
+
+        elif ext == ".docx":
+            try:
+                doc = Document(file.name)
+                input_text = "\n".join([para.text for para in doc.paragraphs])
+                abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords)
+            except Exception as e:
+                yield f"⚠️ **Could not process DOCX:** {e}", ""
+                return
+
+        else:
+            yield f"⚠️ **Unsupported file type `{ext}`.**", ""
+            return
+
+    except Exception as e:
+        yield f"⚠️ **Unexpected error during processing:** {e}", ""
+        return
+
+    # Final result: two outputs (abstract and keywords)
+    yield abstract, keywords
+    
 # ===== UI Title and Description =====
 APP_TITLE = "🧘‍♂️ ManoVākya (मनॊवाक्य): Sentiments & Summaries"
 APP_DESCRIPTION = (
@@ -136,8 +228,8 @@ analyze_interface = gr.Interface(
     fn=analyze_text_split_output,
     inputs=gr.Textbox(lines=5, max_lines=20, label="🗣 Enter text for sentiment & topic analysis"),
     outputs=[
-        gr.Textbox(label="📊 Sentiment", lines = 1),
-        gr.Textbox(label="🧩 Topics", lines = 2, max_lines=20, show_copy_button=True),
+        gr.Textbox(label="📊 Sentiment", lines = 1, max_lines=4),
+        gr.Markdown(label="🧩 Topics", show_copy_button=True),
         gr.Textbox(label="🔢 Word Count", lines = 1),
         gr.Markdown(label="📘 Readability Score", show_copy_button=True)
     ],
@@ -158,7 +250,10 @@ summarize_interface = gr.Interface(
 with gr.Blocks(title="Gemini Document Summariser") as doc_interface:
     gr.Markdown("## 📁 Gemini Document Summariser")
 
-    file_input = gr.File(label="Upload PDF or TXT File")
+    file_input = gr.File(label="Upload PDF or DOCX or TXT File",
+                         file_count = 'single',
+                         file_types = ['.docx', '.txt', '.pdf']
+                        )
     with gr.Row():
         submit_button = gr.Button("Submit")
         clear_button = gr.Button("Clear")
@@ -171,9 +266,42 @@ with gr.Blocks(title="Gemini Document Summariser") as doc_interface:
     )
 
     clear_button.click(
-        fn=lambda: (None, ""),  # Reset file and text
+        fn=lambda: (None, " "),  # Reset file and text
         inputs=[],
         outputs=[file_input, output_box]
+    )
+
+with gr.Blocks(title="Research Companion") as research_interface:
+    gr.Markdown("## 🔍 Research Companion")
+    
+    file_input_r = gr.File(label="Upload PDF or DOCX or TXT File",
+                           file_count = 'single',
+                           file_types = ['.docx', '.txt', '.pdf']
+                           )
+    with gr.Row():
+        txt_num_words_r = gr.Number(label="Number of Words in Abstract", value=300, precision=0)
+        txt_num_keywords_r = gr.Number(label="Number of Keywords", value=5, precision=0)
+    with gr.Row():
+        submit_button_r = gr.Button("Generate Abstract and Keywords")
+        clear_button_r = gr.Button("Clear")
+    abstract_box_r = gr.Markdown(label="🧾 Abstract", show_copy_button=True)
+    keywords_box_r = gr.Markdown(label="🔑 Keywords", show_copy_button=True)
+
+    submit_button_r.click(
+        fn=process_file_for_abstract_and_keywords,
+        inputs=[file_input_r,
+                txt_num_words_r,
+                txt_num_keywords_r
+               ],
+        outputs=[abstract_box_r,
+                 keywords_box_r
+                ]
+    )
+
+    clear_button_r.click(
+        fn=lambda: (None, " ", " "),  # Reset file, abstract, and keywords
+        inputs=[],
+        outputs=[file_input_r, abstract_box_r, keywords_box_r]
     )
     
 # Try to load the PayPal URL from the environment; if missing, use a placeholder
@@ -195,6 +323,8 @@ with gr.Blocks(title=APP_TITLE) as the_application:
             summarize_interface.render()
         with gr.TabItem("📁 Summarise Document"):
             doc_interface.render()
+        with gr.TabItem("🔍 Research Companion"):
+            research_interface.render()
 
     with gr.Row():
         gr.HTML(f"""
