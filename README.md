@@ -3,8 +3,8 @@ title: '🧘‍♂️ ManoVākya (मनॊवाक्य): Sentiments & Summar
 emoji: 🧠
 colorFrom: indigo
 colorTo: blue
-sdk: gradio
-sdk_version: 5.41.1
+sdk: docker
+sdk_version: 5.42.0
 app_file: app.py
 pinned: true
 ---

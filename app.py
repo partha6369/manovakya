@@ -1,3 +1,5 @@
+print(">>> App starting…")
+
 import os
 import re
 import html
@@ -9,9 +11,6 @@ from docx import Document
 
 import nltk
 from nltk.tokenize import sent_tokenize
-
-nltk.download('punkt', quiet=True)
-nltk.download('punkt_tab', quiet=True)
 
 # === Load Gemini API Key ===
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", None)
@@ -38,16 +37,18 @@ def generate_keywords(text: str, num_keywords: int) -> str:
     )
     return gemini_generate(prompt)
 
-def generate_abstract(text: str, num_words: int) -> str:
+def generate_abstract(text: str, num_words: int, num_paragraphs: int) -> str:
     prompt = (
         "Analyse the following text. "
-        f"Return an abstract for the text in approximately {num_words} words.\n\n"
+        f"Return an abstract for the text in approximately {num_words} words.\n"
+        f"Please try to return {num_paragraphs} paragraphs.\n"
+        "Please do not mention the author(s) in the abstract.\n\n"
         f"{text}"
     )
     return gemini_generate(prompt)
 
-def generate_abstract_and_keywords(text: str, num_words: int, num_keywords: int) -> tuple[str, str]:
-    abstract = generate_abstract(text, num_words)
+def generate_abstract_and_keywords(text: str, num_words: int, num_keywords: int, num_paragraphs: int) -> tuple[str, str]:
+    abstract = generate_abstract(text, num_words, num_paragraphs)
     keywords = generate_keywords(text, num_keywords)
 
     return abstract, keywords
@@ -158,7 +159,7 @@ def process_document(file):
     # Wrap the output in a scrollable div
     yield text
     
-def process_file_for_abstract_and_keywords(file, num_words, num_keywords):
+def process_file_for_abstract_and_keywords(file, num_words, num_keywords, num_paragraphs):
     yield "⏳ *Processing document...*", ""
 
     if file is None:
@@ -174,7 +175,7 @@ def process_file_for_abstract_and_keywords(file, num_words, num_keywords):
                     for page in doc:
                         input_text += page.get_text()
         
-                abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords)
+                abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords, num_paragraphs)
             except Exception as e:
                 yield f"⚠️ **Could not generate abstract and extract keywords from PDF:** {e}", ""
                 return
@@ -191,13 +192,13 @@ def process_file_for_abstract_and_keywords(file, num_words, num_keywords):
                     yield f"⚠️ **Could not read TXT:** {e}", ""
                     return
 
-            abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords)
+            abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords, num_paragraphs)
 
         elif ext == ".docx":
             try:
                 doc = Document(file.name)
                 input_text = "\n".join([para.text for para in doc.paragraphs])
-                abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords)
+                abstract, keywords = generate_abstract_and_keywords(input_text, num_words, num_keywords, num_paragraphs)
             except Exception as e:
                 yield f"⚠️ **Could not process DOCX:** {e}", ""
                 return
@@ -281,6 +282,7 @@ with gr.Blocks(title="Research Companion") as research_interface:
     with gr.Row():
         txt_num_words_r = gr.Number(label="Number of Words in Abstract", value=300, precision=0)
         txt_num_keywords_r = gr.Number(label="Number of Keywords", value=5, precision=0)
+        txt_num_paragraphs_r = gr.Number(label="Number of Paragraphs", value=1, precision=0)
     with gr.Row():
         submit_button_r = gr.Button("Generate Abstract and Keywords")
         clear_button_r = gr.Button("Clear")
@@ -291,7 +293,8 @@ with gr.Blocks(title="Research Companion") as research_interface:
         fn=process_file_for_abstract_and_keywords,
         inputs=[file_input_r,
                 txt_num_words_r,
-                txt_num_keywords_r
+                txt_num_keywords_r,
+                txt_num_paragraphs_r
                ],
         outputs=[abstract_box_r,
                  keywords_box_r
@@ -299,7 +302,7 @@ with gr.Blocks(title="Research Companion") as research_interface:
     )
 
     clear_button_r.click(
-        fn=lambda: (None, " ", " "),  # Reset file, abstract, and keywords
+        fn=lambda: (None, " ", " ", " "),  # Reset file, abstract, keywords, and paragraphs
         inputs=[],
         outputs=[file_input_r, abstract_box_r, keywords_box_r]
     )
@@ -338,7 +341,13 @@ with gr.Blocks(title=APP_TITLE) as the_application:
 
     gr.Image(value="App Image.jpg", show_label=False, container=False)
 
-# Determine if running on Hugging Face Spaces
-on_spaces = os.environ.get("SPACE_ID") is not None
+print(">>> Launching Gradio…")
+on_spaces = os.getenv("SPACE_ID") is not None
+port = int(os.getenv("PORT", 7860))
 
-the_application.launch(share=not on_spaces)
+the_application.queue().launch(
+    server_name="0.0.0.0",
+    server_port=port,
+    show_api=False,
+    share=not on_spaces,  # False on Spaces
+)
