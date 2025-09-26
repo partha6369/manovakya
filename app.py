@@ -18,7 +18,7 @@ if not GEMINI_API_KEY:
     raise ValueError("⚠️ Set GEMINI_API_KEY in environment or Hugging Face Secrets.")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+model = genai.GenerativeModel(os.environ.get("GEMINI_MODEL", None))
 
 # === Helper Functions ===
 
